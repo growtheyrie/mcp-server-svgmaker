@@ -21,10 +21,13 @@ from pydantic import BaseModel, ConfigDict, Field
 # --- Setup ---
 
 load_dotenv()
+
+log_level = logging.DEBUG if os.environ.get("SVGMAKER_DEBUG", "").lower() == "true" else logging.INFO
+logging.basicConfig(level=log_level)
 logger = logging.getLogger("svgmaker_mcp_server")
 
 SVGMAKER_API_KEY = os.environ["SVGMAKER_API_KEY"]
-BASE_URL = "https://api.svgmaker.io/v1"
+BASE_URL = os.environ.get("SVGMAKER_BASE_URL", "https://api.svgmaker.io/v1")
 
 mcp = FastMCP(
     name="SVGMaker",
@@ -65,23 +68,33 @@ class StyleParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
     style: Optional[str] = Field(
         default=None,
-        description="Visual style. One of: flat, minimalist, isometric, cartoon, realistic, line-art.",
+        description=(
+            "Visual art style. One of: flat, line_art, engraving, linocut, "
+            "silhouette, isometric, cartoon, ghibli."
+        ),
     )
     color_mode: Optional[str] = Field(
         default=None,
-        description="Colour palette mode. One of: monochrome, duotone, vibrant, muted, pastel.",
+        description="Colour palette mode. One of: full_color, monochrome, few_colors.",
     )
     image_complexity: Optional[str] = Field(
         default=None,
-        description="Detail level. One of: simple, moderate, complex.",
-    )
-    text: Optional[str] = Field(
-        default=None,
-        description="Text to embed in the SVG.",
+        description="Detail level. One of: icon, illustration, scene.",
     )
     composition: Optional[str] = Field(
         default=None,
-        description="Layout composition. One of: centered, rule-of-thirds, full-bleed.",
+        description=(
+            "Layout composition. One of: centered_object, repeating_pattern, "
+            "full_scene, objects_in_grid."
+        ),
+    )
+    text_style: Optional[str] = Field(
+        default=None,
+        description=(
+            "Text handling in the SVG. One of: only_title (heading text only), "
+            "embedded_text (text integrated into the design). Only specify when "
+            "the design should include text."
+        ),
     )
 
 
@@ -170,9 +183,9 @@ class TraceToSVGInput(BaseModel):
         pattern="^(stacked|cutout)$",
         description="Layer ordering. 'stacked' overlaps layers; 'cutout' cuts holes.",
     )
-    detail: Optional[int] = Field(default=50, ge=0, le=100, description="Detail level 0–100.")
-    smoothness: Optional[int] = Field(default=50, ge=0, le=100, description="Path smoothness 0–100.")
-    corners: Optional[int] = Field(default=50, ge=0, le=100, description="Corner sensitivity 0–100.")
+    detail: Optional[int] = Field(default=50, ge=0, le=100, description="Detail level 0-100.")
+    smoothness: Optional[int] = Field(default=50, ge=0, le=100, description="Path smoothness 0-100.")
+    corners: Optional[int] = Field(default=50, ge=0, le=100, description="Corner sensitivity 0-100.")
     reduce_noise: Optional[int] = Field(default=4, ge=0, description="Noise reduction level.")
 
 
@@ -183,6 +196,26 @@ class OptimizeSVGInput(BaseModel):
         default=False,
         description="If true, compresses output to SVGZ format and returns svgzUrl.",
     )
+
+
+# --- styleParams builder ---
+
+def _build_style_params(sp: Optional[StyleParams]) -> Optional[Dict[str, Any]]:
+    """Convert StyleParams model to the API's styleParams dict.
+
+    Note: text_style maps to the 'text' key in the API body, not 'text_style'.
+    This matches the official @genwave/svgmaker-mcp implementation.
+    """
+    if sp is None:
+        return None
+    raw = sp.model_dump()
+    result: Dict[str, Any] = {}
+    for key, value in raw.items():
+        if value is None:
+            continue
+        api_key = "text" if key == "text_style" else key
+        result[api_key] = value
+    return result or None
 
 
 # --- Tools ---
@@ -201,7 +234,7 @@ async def svgmaker_generate(params: GenerateSVGInput) -> str:
     """
     Generate an SVG from a text description using AI.
 
-    Costs 1–3 credits depending on quality, or model-specific credits when
+    Costs 1-3 credits depending on quality, or model-specific credits when
     using the model parameter. quality and model are mutually exclusive.
 
     Args:
@@ -213,15 +246,17 @@ async def svgmaker_generate(params: GenerateSVGInput) -> str:
               Options: gpt-image-1, gpt-image-1-mini, flux-1-dev, flux-2-dev,
               z-image-turbo, qwen-image, nano-banana, nano-banana-pro,
               imagen-4, imagen-4-ultra, seedream-4.5.
-              See API docs for per-model credit costs.
         - aspect_ratio (str, optional): One of: auto, portrait, landscape, square. Default: auto.
         - background (str, optional): One of: auto, transparent, opaque. Default: auto.
         - style_params (object, optional): Style customisation.
-              - style (str): One of: flat, minimalist, isometric, cartoon, realistic, line-art.
-              - color_mode (str): One of: monochrome, duotone, vibrant, muted, pastel.
-              - image_complexity (str): One of: simple, moderate, complex.
-              - text (str): Text to embed in the SVG.
-              - composition (str): One of: centered, rule-of-thirds, full-bleed.
+              - style (str): One of: flat, line_art, engraving, linocut, silhouette,
+                    isometric, cartoon, ghibli.
+              - color_mode (str): One of: full_color, monochrome, few_colors.
+              - image_complexity (str): One of: icon, illustration, scene.
+              - composition (str): One of: centered_object, repeating_pattern,
+                    full_scene, objects_in_grid.
+              - text_style (str): One of: only_title, embedded_text.
+                    Only specify when the design should include text.
 
     Returns:
         - svgUrl (str): CDN URL of the generated SVG. Expires after 24 hours.
@@ -241,10 +276,9 @@ async def svgmaker_generate(params: GenerateSVGInput) -> str:
             body["model"] = params.model
         else:
             body["quality"] = params.quality or "medium"
-        if params.style_params:
-            sp = {k: v for k, v in params.style_params.model_dump().items() if v is not None}
-            if sp:
-                body["styleParams"] = sp
+        sp = _build_style_params(params.style_params)
+        if sp:
+            body["styleParams"] = sp
 
         async with httpx.AsyncClient() as client:
             res = await client.post(
@@ -277,13 +311,13 @@ async def svgmaker_edit(params: EditSVGInput) -> str:
     """
     Edit an existing image or SVG with AI-powered modifications.
 
-    Accepts PNG, JPEG, WebP, or SVG via URL. Costs 2–5 credits depending
+    Accepts PNG, JPEG, WebP, or SVG via URL. Costs 2-5 credits depending
     on quality, or model-specific credits when using the model parameter.
     quality and model are mutually exclusive.
 
     Args:
         - prompt (str, required): Edit instructions.
-              Example: 'change the background to transparent', 'make it more minimalist'.
+              Example: 'change the background to transparent', 'convert to line_art style'.
         - image_url (str, required): URL of the image or SVG to edit.
               Supported formats: PNG, JPEG, WebP, SVG.
         - quality (str, optional): Render quality. Default: medium.
@@ -292,15 +326,17 @@ async def svgmaker_edit(params: EditSVGInput) -> str:
         - model (str, optional): Specific AI model ID. Mutually exclusive with quality.
               Options: flux-2-dev, qwen-image-edit-plus, flux-kontext-dev,
               gpt-image-1, gpt-image-1.5, nano-banana, nano-banana-pro, seedream-4.5.
-              See API docs for per-model credit costs.
         - aspect_ratio (str, optional): One of: auto, portrait, landscape, square. Default: auto.
         - background (str, optional): One of: auto, transparent, opaque. Default: auto.
         - style_params (object, optional): Style customisation.
-              - style (str): One of: flat, minimalist, isometric, cartoon, realistic, line-art.
-              - color_mode (str): One of: monochrome, duotone, vibrant, muted, pastel.
-              - image_complexity (str): One of: simple, moderate, complex.
-              - text (str): Text to embed in the SVG.
-              - composition (str): One of: centered, rule-of-thirds, full-bleed.
+              - style (str): One of: flat, line_art, engraving, linocut, silhouette,
+                    isometric, cartoon, ghibli.
+              - color_mode (str): One of: full_color, monochrome, few_colors.
+              - image_complexity (str): One of: icon, illustration, scene.
+              - composition (str): One of: centered_object, repeating_pattern,
+                    full_scene, objects_in_grid.
+              - text_style (str): One of: only_title, embedded_text.
+                    Only specify when the design should include text.
 
     Returns:
         - svgUrl (str): CDN URL of the edited SVG. Expires after 24 hours.
@@ -328,10 +364,9 @@ async def svgmaker_edit(params: EditSVGInput) -> str:
                 form_data["model"] = params.model
             else:
                 form_data["quality"] = params.quality or "medium"
-            if params.style_params:
-                sp = {k: v for k, v in params.style_params.model_dump().items() if v is not None}
-                if sp:
-                    form_data["styleParams"] = json.dumps(sp)
+            sp = _build_style_params(params.style_params)
+            if sp:
+                form_data["styleParams"] = json.dumps(sp)
 
             res = await client.post(
                 f"{BASE_URL}/edit",
@@ -368,7 +403,7 @@ async def svgmaker_convert_ai(params: ConvertToSVGInput) -> str:
     Use this for photographic or complex images. For flat/simple artwork,
     svgmaker_trace (0.5 credits) may produce better results at lower cost.
 
-    Note: SVG files are not accepted as input — use svgmaker_edit for SVG modifications.
+    Note: SVG files are not accepted as input -- use svgmaker_edit for SVG modifications.
 
     Args:
         - image_url (str, required): URL of the raster image to vectorize.
@@ -434,10 +469,9 @@ async def svgmaker_trace(params: TraceToSVGInput) -> str:
               One of: pixel (pixel-aligned), polygon (straight edges), spline (smooth curves).
         - hierarchical (str, optional): Layer ordering. Default: stacked.
               One of: stacked (layers overlap), cutout (layers cut holes in each other).
-        - detail (int, optional): Level of path detail. Range 0–100. Default: 50.
-        - smoothness (int, optional): Path smoothness. Range 0–100. Default: 50.
-        - corners (int, optional): Corner sensitivity. Range 0–100. Default: 50.
-              Higher values produce sharper corners.
+        - detail (int, optional): Level of path detail. Range 0-100. Default: 50.
+        - smoothness (int, optional): Path smoothness. Range 0-100. Default: 50.
+        - corners (int, optional): Corner sensitivity. Range 0-100. Default: 50.
         - reduce_noise (int, optional): Noise reduction level. Default: 4.
 
     Returns:
@@ -491,7 +525,7 @@ async def svgmaker_trace(params: TraceToSVGInput) -> str:
 )
 async def svgmaker_optimize(params: OptimizeSVGInput) -> str:
     """
-    Optimize an SVG file to reduce size by 10–30% using SVGO (0.5 credits).
+    Optimize an SVG file to reduce size by 10-30% using SVGO (0.5 credits).
 
     Removes redundant metadata, normalizes paths, and collapses unnecessary
     attributes. Optionally compresses to SVGZ (gzip) format.

@@ -7,8 +7,8 @@ Deployed on Prefect Horizon.
 
 | Tool | Endpoint | Credits | Description |
 |---|---|---|---|
-| `svgmaker_generate` | `POST /v1/generate` | 1–3 | Generate SVG from a text description |
-| `svgmaker_edit` | `POST /v1/edit` | 2–5 | Edit an existing image or SVG with AI |
+| `svgmaker_generate` | `POST /v1/generate` | 1-3 | Generate SVG from a text description |
+| `svgmaker_edit` | `POST /v1/edit` | 2-5 | Edit an existing image or SVG with AI |
 | `svgmaker_convert_ai` | `POST /v1/convert/ai-vectorize` | 1 | AI-vectorize a raster image to SVG |
 | `svgmaker_trace` | `POST /v1/convert/trace` | 0.5 | Trace a raster image to SVG using VTracer |
 | `svgmaker_optimize` | `POST /v1/svg/optimize` | 0.5 | Optimize SVG file size using SVGO |
@@ -20,10 +20,22 @@ Both tools convert raster images to SVG, but via different mechanisms:
 - **`svgmaker_convert_ai`** (1 credit): Uses AI to interpret and redraw the image as vector art. Better for complex or photographic images. Output may stylize or simplify the original.
 - **`svgmaker_trace`** (0.5 credits): Uses VTracer to algorithmically trace colour regions into paths. Better for logos, icons, and flat artwork with clear edges. Output is a faithful geometric trace.
 
+## Style parameters
+
+The `style_params` object accepted by `svgmaker_generate` and `svgmaker_edit` supports:
+
+| Field | Options |
+|---|---|
+| `style` | `flat`, `line_art`, `engraving`, `linocut`, `silhouette`, `isometric`, `cartoon`, `ghibli` |
+| `color_mode` | `full_color`, `monochrome`, `few_colors` |
+| `image_complexity` | `icon`, `illustration`, `scene` |
+| `composition` | `centered_object`, `repeating_pattern`, `full_scene`, `objects_in_grid` |
+| `text_style` | `only_title`, `embedded_text` |
+
 ## Deployment (Prefect Horizon)
 
 - Entrypoint: `svgmaker_server.py:mcp`
-- Environment secrets: `SVGMAKER_API_KEY`
+- Environment secrets: `SVGMAKER_API_KEY`, `SVGMAKER_BASE_URL`, `SVGMAKER_DEBUG`
 
 ## Local setup
 
