@@ -38,7 +38,7 @@ mcp = FastMCP(
 # --- HTTP helpers ---
 
 def _headers() -> Dict[str, str]:
-    return {"x-api-key": f"{SVGMAKER_API_KEY}"}
+    return {"x-api-key": SVGMAKER_API_KEY}
 
 
 # --- Error handler ---
