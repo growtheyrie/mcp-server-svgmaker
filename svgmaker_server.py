@@ -288,7 +288,10 @@ async def svgmaker_generate(params: GenerateSVGInput) -> str:
                 timeout=60,
             )
             res.raise_for_status()
-            data = res.json()
+            try:
+                data = res.json()
+            except ValueError:
+                raise ValueError(f"Non-JSON response (status {res.status_code}): {res.text[:500]}")
             return json.dumps({
                 "svgUrl": data["data"]["svgUrl"],
                 "svgText": data["data"]["svgText"],
@@ -376,7 +379,10 @@ async def svgmaker_edit(params: EditSVGInput) -> str:
                 timeout=60,
             )
             res.raise_for_status()
-            data = res.json()
+            try:
+                data = res.json()
+            except ValueError:
+                raise ValueError(f"Non-JSON response (status {res.status_code}): {res.text[:500]}")
             return json.dumps({
                 "svgUrl": data["data"]["svgUrl"],
                 "svgText": data["data"]["svgText"],
@@ -431,7 +437,10 @@ async def svgmaker_convert_ai(params: ConvertToSVGInput) -> str:
                 timeout=60,
             )
             res.raise_for_status()
-            data = res.json()
+            try:
+                data = res.json()
+            except ValueError:
+                raise ValueError(f"Non-JSON response (status {res.status_code}): {res.text[:500]}")
             return json.dumps({
                 "svgUrl": data["data"]["svgUrl"],
                 "svgText": data["data"]["svgText"],
@@ -507,7 +516,10 @@ async def svgmaker_trace(params: TraceToSVGInput) -> str:
                 timeout=60,
             )
             res.raise_for_status()
-            data = res.json()
+            try:
+                data = res.json()
+            except ValueError:
+                raise ValueError(f"Non-JSON response (status {res.status_code}): {res.text[:500]}")
             return json.dumps({"svgUrl": data["data"]["svgUrl"]})
     except Exception as e:
         return _handle_error(e, "svgmaker_trace")
@@ -559,7 +571,10 @@ async def svgmaker_optimize(params: OptimizeSVGInput) -> str:
                 timeout=30,
             )
             res.raise_for_status()
-            data = res.json()
+            try:
+                data = res.json()
+            except ValueError:
+                raise ValueError(f"Non-JSON response (status {res.status_code}): {res.text[:500]}")
             if params.compress:
                 return json.dumps({"svgzUrl": data["data"]["svgzUrl"]})
             return json.dumps({"svgUrl": data["data"]["svgUrl"]})
