@@ -5,7 +5,7 @@ Generate, edit, vectorize, and optimize SVGs via the SVGMaker REST API.
 Deployed on Prefect Horizon.
 
 Base URL: https://api.svgmaker.io/v1
-Auth header: x-api-key: svgmaker-io{SVGMAKER_API_KEY}
+Auth header: x-api-key: {SVGMAKER_API_KEY}
 """
 
 import json
@@ -38,7 +38,7 @@ mcp = FastMCP(
 # --- HTTP helpers ---
 
 def _headers() -> Dict[str, str]:
-    return {"x-api-key": f"svgmaker-io{SVGMAKER_API_KEY}"}
+    return {"x-api-key": f"{SVGMAKER_API_KEY}"}
 
 
 # --- Error handler ---
